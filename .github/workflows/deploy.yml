@@ -1,4 +1,4 @@
-name: Validate and deploy GitHub Pages
+name: Validate and publish frank-aestheticmedicine.github.io
 on:
   push:
     branches: [main]
@@ -6,13 +6,18 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: pages
+  group: frank-aestheticmedicine-pages
   cancel-in-progress: false
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: https://frank-aestheticmedicine.github.io/
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -20,20 +25,17 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-  deploy:
-    needs: build
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to the dedicated organization website
+        env:
+          DEPLOY_KEY: ${{ secrets.FRANK_AESTHETICMEDICINE_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$DEPLOY_KEY" ]] || { echo 'Missing FRANK_AESTHETICMEDICINE_DEPLOY_KEY' >&2; exit 1; }
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/skin-journal-ssh.XXXXXX")
+          trap 'rm -rf "$ssh_dir"' EXIT
+          (umask 077; printf '%s\n' "$DEPLOY_KEY" > "$ssh_dir/key")
+          # GitHub's official Ed25519 host key from https://api.github.com/meta.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$ssh_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -F /dev/null -i '$ssh_dir/key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$ssh_dir/known_hosts' -o StrictHostKeyChecking=yes"
+          bash scripts/publish-pages.sh dist

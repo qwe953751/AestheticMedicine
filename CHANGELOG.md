@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0 網址修正 — 2026-11-08
+
+- 正式網址修正為 `https://frank-aestheticmedicine.github.io/`，比照 Investment 使用專用組織網站，網址不含來源帳號。
+- CI 沿用既有 scoped deploy key，將根目錄版網站發佈到組織 repository 的 `gh-pages`，發佈 commit 使用 Actions bot。
+- 修正 Vite／favicon 根目錄路徑及所有目前部署文件。
+- 舊來源網址撤下完整網站；保留僅在有本機舊紀錄時出現的備份移轉入口。
+
 ## 0.1.0 — 2026-11-08
 
 - 首次實作繁體中文響應式個人醫美與肌膚管理網站「肌序」。
