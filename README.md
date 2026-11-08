@@ -49,7 +49,7 @@ npm run preview
 
 推送來源 repository 的 `main` 後，`.github/workflows/deploy.yml` 自動安裝依賴、執行測試及編譯，再使用既有專用 deploy key，透過 `scripts/publish-pages.sh` 將 `dist/` 發佈到 `frank-AestheticMedicine/frank-aestheticmedicine.github.io` 的 `gh-pages`。該組織網站使用 GitHub Pages 分支建置；CI 不再部署到來源帳號的 Pages。部署 commit 使用 GitHub Actions bot 身分，不把個人帳號寫入網站資產或網站 Git 作者。
 
-唯一正式網址是 `https://frank-aestheticmedicine.github.io/`。舊來源帳號網址撤下完整網站，空資料時顯示空白；有舊 IndexedDB 紀錄的瀏覽器只顯示備份移轉入口。不同網域的 IndexedDB 不共用，必須先從舊站匯出，再到新站「資料與設定」匯入。
+唯一允許顯示網站的正式網址是 `https://frank-aestheticmedicine.github.io/`。正式版僅在此 HTTPS 根目錄、沒有 query 且直接開啟時載入應用程式；其他來源、路徑或 iframe 皆為空白。開發模式仍可於 localhost 操作。舊來源入口與 AestheticMedicine-view 入口皆為完全空白頁，沒有轉址、iframe 或備份移轉功能；404 頁面亦為空白。此變更不刪除瀏覽器既有 IndexedDB 資料。
 
 在 [GitHub Actions](https://github.com/qwe953751/AestheticMedicine/actions) 確認部署成功後開啟正式網址。程式更新不會自動清除 IndexedDB；更改資料格式前需設計遷移並保留備份相容性。
 

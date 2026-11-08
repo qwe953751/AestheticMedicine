@@ -69,4 +69,4 @@ type Metric = { name: string; value: string; unit: string; scale: string };
 
 來源 `main` → GitHub Actions → npm ci → test → TypeScript/Vite build → `scripts/publish-pages.sh` → 專用組織網站 `gh-pages` → GitHub Pages 分支建置。部署目標固定為 `frank-AestheticMedicine/frank-aestheticmedicine.github.io`。使用既有 `FRANK_AESTHETICMEDICINE_DEPLOY_KEY`；GitHub SSH 主機金鑰固定驗證，不以個人 token 退回部署。GITHUB_TOKEN 只有 contents:read，checkout 不保留憑證；發佈 commit 作者為 Actions bot。
 
-唯一正式網址為 `https://frank-aestheticmedicine.github.io/`，Vite base 與 favicon 使用根目錄 `/`。網站升版不應更改 IndexedDB 名稱。跨網域不能直接讀取舊 IndexedDB：`legacy/index.html` 是舊網域的備份移轉頁，無資料時空白，有紀錄才提供完整 JSON 下載與新站連結；不提供新增／編輯功能。
+唯一正式網址為 `https://frank-aestheticmedicine.github.io/`，Vite base 與 favicon 使用根目錄 `/`。網站升版不應更改 IndexedDB 名稱。`src/site-access.ts` 限制正式版只能在指定 HTTPS 根目錄、無 query 且非 iframe 時載入 App 與樣式；不符合時清空 body 與標題。`legacy/index.html`、`legacy/404.html` 及正式站 `public/404.html` 為無文字、腳本、連結、iframe 或轉址的空白 HTML。舊來源入口及 AestheticMedicine-view 入口均發佈同樣空白頁，不再提供備份入口。

@@ -1,5 +1,11 @@
 # Changelog
 
+## 唯一顯示入口修正 — 2026-11-08
+
+- 僅允許指定正式 HTTPS 根網址直接呈現網站；其他來源、路徑、query 與 iframe 顯示空白。
+- 舊來源站及 AestheticMedicine-view 改成完全空白，移除備份入口與 iframe；所有相關 404 頁面空白。
+- 保留瀏覽器原有資料，不執行清除。
+
 ## 0.1.0 網址修正 — 2026-11-08
 
 - 正式網址修正為 `https://frank-aestheticmedicine.github.io/`，比照 Investment 使用專用組織網站，網址不含來源帳號。
