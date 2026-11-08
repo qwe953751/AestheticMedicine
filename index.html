@@ -2,9 +2,44 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex">
-  <title></title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow">
+  <title>肌序</title>
+  <style>body{margin:0;background:#f7f7f3;color:#354238;font:15px/1.9 system-ui,sans-serif}main{max-width:540px;margin:12vh auto;padding:28px}h1{font-size:24px}button,a{display:inline-block;background:#455f50;color:#fff;border:0;border-radius:7px;padding:12px 18px;margin:8px 8px 8px 0;text-decoration:none;font:inherit;cursor:pointer}p{color:#64715e}[hidden]{display:none!important}</style>
 </head>
-<body></body>
+<body>
+  <main id="migration" hidden>
+    <h1>將你的紀錄帶到新網址</h1>
+    <p>這個舊入口已停止提供完整網站。此瀏覽器有 <strong id="count"></strong> 筆舊紀錄，請先匯出備份，再到新網站「資料與設定」匯入。</p>
+    <button id="export" type="button">匯出舊紀錄與附件</button>
+    <a href="https://frank-aestheticmedicine.github.io/" rel="noreferrer">前往新網站</a>
+    <p>備份含私人紀錄與照片，請妥善保管。匯入新站會取代該站目前資料；請先備份新站已有的內容。</p>
+  </main>
+  <script>
+    // Keep the retired entry blank unless this browser actually holds records.
+    const request = indexedDB.open('skin-journal-v1', 1);
+    request.onupgradeneeded = () => request.transaction.abort();
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('journal')) { db.close(); return; }
+      const tx = db.transaction('journal', 'readonly');
+      const read = tx.objectStore('journal').get('data');
+      tx.oncomplete = () => {
+        db.close();
+        const entries = read.result?.entries;
+        if (!Array.isArray(entries) || !entries.length) return;
+        document.getElementById('count').textContent = String(entries.length);
+        document.getElementById('migration').hidden = false;
+        document.getElementById('export').onclick = () => {
+          const data = JSON.stringify({ app: 'skin-journal', version: 1, exportedAt: new Date().toISOString(), entries }, null, 2);
+          const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+          const link = document.createElement('a');
+          link.href = url; link.download = '肌序舊站備份.json'; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 30000);
+        };
+      };
+    };
+  </script>
+</body>
 </html>
