@@ -2567,3 +2567,15 @@ h1 {
     margin-bottom: 28px;
   }
 }
+@media (max-width: 760px) {
+  .sidebar {
+    visibility: hidden;
+  }
+  .sidebar.open {
+    visibility: visible;
+  }
+  .today-panel > p {
+    max-width: calc(100% - 123px);
+    min-height: 40px;
+  }
+}
