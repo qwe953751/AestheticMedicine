@@ -83,7 +83,7 @@ export default function ReportReader({
         />
       </label>
       <p className="small-text muted">
-        PDF、JPG、PNG、WebP；每檔上限 8 MB。選擇檔案後會儲存到目前資料區。
+        PDF、JPG、PNG、WebP；每檔上限 50 MB。選擇檔案後會儲存到目前資料區。
       </p>
       {error && (
         <p className="error-box" role="alert">

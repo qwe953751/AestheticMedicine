@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_FILE,
+  readAttachment,
   calendarExport,
   daysBetween,
   monthDays,
@@ -181,4 +183,11 @@ describe("報告摘要", () => {
     expect(out).toContain("A／v1");
     expect(out).toContain("關聯療程：");
   });
+});
+
+it("rejects even one byte over the 50 MiB boundary before reading a file", async () => {
+  expect(MAX_FILE).toBe(50 * 1024 * 1024);
+  await expect(
+    readAttachment({ type: "application/pdf", size: MAX_FILE + 1 } as File),
+  ).rejects.toThrow("50 MB");
 });

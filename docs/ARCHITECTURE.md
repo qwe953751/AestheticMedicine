@@ -18,7 +18,7 @@ Supabase email/password 登入，保留信箱驗證。前端 publishable key 可
 
 RLS 使用 `(select auth.uid()) = user_id`，資料表授權只有 authenticated 的 select／insert／update；沒有 anon 權限。Storage select／insert／delete policies 同時檢查 bucket 與使用者路徑；bucket 非公開，附件不產生永久公開連結。檔案不可覆寫，變更內容取得新 hash。
 
-`save_journal(expected_revision,new_entries)` 為 security invoker，固定空 search_path，確認 uid 後以單次 insert 或 conditional update 比對 revision，版本不一致回 `PT409`／HTTP 409。沒有 security definer 或 user_metadata 授權。SQL metadata 限 2 MiB、5,000 筆；原始附件 8 MiB MIME 白名單在 bucket 限制。
+`save_journal(expected_revision,new_entries)` 為 security invoker，固定空 search_path，確認 uid 後以單次 insert 或 conditional update 比對 revision，版本不一致回 `PT409`／HTTP 409。沒有 security definer 或 user_metadata 授權。SQL metadata 限 2 MiB、5,000 筆；原始附件 50 MiB MIME 白名單在 bucket 限制，維持私人存取與既有 hash 路徑。前端單檔驗證同步限制 50 MiB，data URL 附件總量維持 100 MiB、JSON 匯入上限 110 MiB。大型附件解碼使用預先配置的 Uint8Array 避免 iterable 產生巨量暫存；單次網路請求 timeout 120 秒。
 
 移除紀錄不立即回收已無參照的私人物件，以免並行裝置／失敗保存誤刪共用 hash。後端垃圾回收仍待實作；資料表不再引用的檔案仍私人，不能聲稱立即實體刪除。
 

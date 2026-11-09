@@ -48,7 +48,7 @@ export const labels: Record<Kind, string> = {
   routine: "保養步驟",
   event: "日程",
 };
-export const MAX_FILE = 8 * 1024 * 1024;
+export const MAX_FILE = 50 * 1024 * 1024;
 export const MAX_BACKUP = 100 * 1024 * 1024;
 export const fieldNames: Record<Kind, string[]> = {
   treatment: ["area", "clinic", "doctor", "cost", "instructions"],
@@ -284,7 +284,7 @@ export function validateEntries(input: unknown): Entry[] {
         !isString(a.data, Math.ceil((MAX_FILE * 4) / 3) + 100) ||
         !a.data.startsWith(`data:${a.type};base64,`)
       )
-        throw new Error("附件格式錯誤或大於 8 MB。");
+        throw new Error("附件格式錯誤或大於 50 MB。");
       const base64 = a.data.split(",")[1];
       if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64) || base64.length % 4 !== 0)
         throw new Error("附件編碼錯誤。");
@@ -358,7 +358,7 @@ export async function readAttachment(file: File): Promise<Attachment> {
     file.size > MAX_FILE ||
     !file.size
   )
-    throw new Error("請選擇 8 MB 以下的 JPG、PNG、WebP 或 PDF。");
+    throw new Error("請選擇 50 MB 以下的 JPG、PNG、WebP 或 PDF。");
   const data = await new Promise<string>((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result));

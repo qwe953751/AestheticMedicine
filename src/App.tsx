@@ -595,7 +595,7 @@ function Editor({
                 </span>
                 <small>
                   JPG、PNG、WebP{entry.kind !== "photo" ? "、PDF" : ""} ·
-                  每檔上限 8 MB · 最多 12 個
+                  每檔上限 50 MB · 最多 12 個
                 </small>
                 <input
                   type="file"

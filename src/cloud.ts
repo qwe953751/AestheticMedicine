@@ -14,7 +14,7 @@ export const cloud = createClient(
       fetch: (input, init) =>
         fetch(input, {
           ...init,
-          signal: init?.signal || AbortSignal.timeout(20000),
+          signal: init?.signal || AbortSignal.timeout(120000),
         }),
     },
     auth: {
@@ -35,7 +35,9 @@ export function clearCloudMemory() {
 }
 function bytes(data: string) {
   const binary = atob(data.split(",")[1]);
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  const raw = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) raw[i] = binary.charCodeAt(i);
+  return raw;
 }
 export async function contentHash(data: Uint8Array<ArrayBuffer>) {
   const digest = await crypto.subtle.digest("SHA-256", data);

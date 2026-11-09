@@ -61,7 +61,7 @@ beforeEach(() => {
             "data:" +
             blob.type +
             ";base64," +
-            btoa(String.fromCharCode(...new Uint8Array(b)));
+            Buffer.from(b).toString("base64");
           this.onload();
         });
       }
@@ -121,4 +121,42 @@ it("merges local records without dropping cloud data or overwriting conflicts", 
   expect(() => mergeEntries([a], [{ ...a, title: "不同版本" }])).toThrow(
     "內容不同",
   );
+});
+
+it("round-trips a full 50 MiB attachment on a fresh device", async () => {
+  const raw = Buffer.alloc(50 * 1024 * 1024, 32);
+  raw.write("%PDF-1.7");
+  const original: Entry = {
+    ...newEntry("report"),
+    title: "50 MB report",
+    attachments: [
+      {
+        id: "large",
+        name: "large.pdf",
+        type: "application/pdf",
+        size: raw.length,
+        data: "data:application/pdf;base64," + raw.toString("base64"),
+      },
+    ],
+  };
+  await saveCloud([original], 0, userId);
+  expect(mock.upload).toHaveBeenCalledTimes(1);
+  const blob = mock.upload.mock.calls[0][1] as Blob;
+  expect(blob.size).toBe(50 * 1024 * 1024);
+  const remote = mock.rpc.mock.calls[0][1].new_entries;
+  clearCloudMemory();
+  mock.maybeSingle.mockResolvedValue({
+    data: { revision: 1, entries: remote },
+    error: null,
+  });
+  mock.download.mockResolvedValue({ data: blob, error: null });
+  const restored = await loadCloud(userId);
+  expect(
+    restored.entries[0].attachments[0].data === original.attachments[0].data,
+  ).toBe(true);
+}, 60000);
+it("does not publish metadata if a large upload fails", async () => {
+  mock.upload.mockResolvedValue({ error: { message: "network error" } });
+  await expect(saveCloud([entry()], 0, userId)).rejects.toThrow("上傳失敗");
+  expect(mock.rpc).not.toHaveBeenCalled();
 });

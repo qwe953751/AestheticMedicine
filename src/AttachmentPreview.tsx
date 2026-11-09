@@ -102,8 +102,10 @@ export default function AttachmentPreview({
     if (attachment.type !== "application/pdf") return;
     let live = true;
     const binary = atob(attachment.data.split(",")[1]);
+    const raw = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) raw[i] = binary.charCodeAt(i);
     const task = getDocument({
-      data: Uint8Array.from(binary, (c) => c.charCodeAt(0)),
+      data: raw,
       cMapUrl: new URL("/pdfjs/cmaps/", window.location.origin).href,
       cMapPacked: true,
       standardFontDataUrl: new URL(
