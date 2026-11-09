@@ -1,5 +1,7 @@
 import {
   useEffect,
+  lazy,
+  Suspense,
   useId,
   useRef,
   useState,
@@ -55,9 +57,14 @@ import {
   validateEntries,
   type Dataset,
   type Entry,
+  type Attachment,
   type Kind,
 } from "./model";
 import { load, save } from "./storage";
+const AttachmentPreview = lazy(() => import("./AttachmentPreview"));
+import CloudAccount, { useAccount } from "./CloudAccount";
+import { loadCloud, saveCloud } from "./cloud";
+import { mergeEntries } from "./merge";
 
 type Page =
   | "overview"
@@ -224,7 +231,9 @@ function Editor({
   entries,
   onClose,
   onSave,
+  cloudMode,
 }: {
+  cloudMode: boolean;
   initial: Entry;
   entries: Entry[];
   onClose: () => void;
@@ -234,6 +243,7 @@ function Editor({
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState<Attachment | null>(null);
   const isNew = !entries.some((e) => e.id === initial.id);
   const dirty = JSON.stringify(entry) !== JSON.stringify(initial);
   useEffect(() => {
@@ -290,6 +300,15 @@ function Editor({
     setBusy(true);
     setError("");
     try {
+      if (
+        entry.kind === "report" &&
+        !entry.attachments.length &&
+        !fields.sourceUrl &&
+        !entry.metrics.length
+      )
+        throw new Error("請加入報告附件、來源連結或至少一個手動指標。");
+      if (entry.kind === "photo" && !entry.attachments.length)
+        throw new Error("請先選擇至少一張照片，確認附件縮圖出現後再儲存。");
       await onSave({
         ...entry,
         fields,
@@ -586,9 +605,9 @@ function Editor({
                       : "image/jpeg,image/png,image/webp,application/pdf"
                   }
                   disabled={reading || busy}
-                  onChange={async (e) => {
-                    const files = Array.from(e.target.files || []);
-                    e.target.value = "";
+                  onInput={async (e) => {
+                    const files = Array.from(e.currentTarget.files || []);
+                    e.currentTarget.value = "";
                     setError("");
                     setReading(true);
                     try {
@@ -612,12 +631,18 @@ function Editor({
               <div className="attachment-list">
                 {entry.attachments.map((a) => (
                   <div key={a.id}>
-                    {a.type.startsWith("image/") ? (
-                      <img src={a.data} alt="附件縮圖" />
-                    ) : (
-                      <FileText size={20} />
-                    )}
-                    <span>{a.name}</span>
+                    <button
+                      type="button"
+                      className="attachment-preview-button"
+                      onClick={() => setPreview(a)}
+                    >
+                      {a.type.startsWith("image/") ? (
+                        <img src={a.data} alt="附件縮圖" />
+                      ) : (
+                        <FileText size={20} />
+                      )}
+                      <span>預覽 {a.name}</span>
+                    </button>
                     <button
                       type="button"
                       className="icon-button"
@@ -652,7 +677,7 @@ function Editor({
         <div className="modal-footer">
           <span>
             <LockKeyhole size={14} />
-            僅儲存於此瀏覽器
+            {cloudMode ? "儲存至目前雲端帳號" : "僅儲存於此瀏覽器"}
           </span>
           <button
             type="button"
@@ -668,11 +693,63 @@ function Editor({
           </button>
         </div>
       </form>
+      {preview && (
+        <PreviewDialog attachment={preview} onClose={() => setPreview(null)} />
+      )}
     </Modal>
   );
 }
 
+function PreviewDialog({
+  attachment,
+  onClose,
+}: {
+  attachment: Attachment;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current!;
+    d.showModal();
+    return () => d.close();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="attachment-preview-dialog"
+      aria-label={`預覽 ${attachment.name}`}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <div className="modal-head">
+        <h2>{attachment.name}</h2>
+        <button
+          className="icon-button"
+          onClick={onClose}
+          aria-label="關閉附件預覽"
+        >
+          <X size={20} />
+        </button>
+      </div>
+      {attachment.type === "application/pdf" ? (
+        <Suspense fallback={<p>正在載入報告預覽…</p>}>
+          <AttachmentPreview attachment={attachment} />
+        </Suspense>
+      ) : (
+        <div className="image-preview">
+          <img src={attachment.data} alt={attachment.name} />
+        </div>
+      )}
+    </dialog>
+  );
+}
 export default function App() {
+  const { user, resolved: authReady } = useAccount();
+  const userId = user?.id || null;
+  const activeUser = useRef(userId);
+  activeUser.current = userId;
   const [dataset, setDataset] = useState<Dataset>({ revision: 0, entries: [] });
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState("");
@@ -682,6 +759,7 @@ export default function App() {
   const [filter, setFilter] = useState("all");
   const [editor, setEditor] = useState<Entry | null>(null);
   const [detail, setDetail] = useState<Entry | null>(null);
+  const [preview, setPreview] = useState<Attachment | null>(null);
   const [toast, setToast] = useState("");
   const [menu, setMenu] = useState(false);
   const [pendingImport, setPendingImport] = useState<Entry[] | null>(null);
@@ -713,21 +791,88 @@ export default function App() {
       .join(" ")
       .toLocaleLowerCase()
       .includes(query.toLocaleLowerCase());
+  const datasetRef = useRef(dataset);
+  datasetRef.current = dataset;
+  const editingRef = useRef(false);
+  editingRef.current = Boolean(editor || detail || pendingImport);
   useEffect(() => {
-    load()
+    if (!authReady) return;
+    let live = true;
+    setReady(false);
+    setStorageError("");
+    setDataset({ revision: 0, entries: [] });
+    setEditor(null);
+    setDetail(null);
+    setPreview(null);
+    setPendingImport(null);
+    const read = () => (userId ? loadCloud(userId) : load());
+    void read()
       .then((d) => {
-        setDataset(d);
-        setReady(true);
+        if (live) {
+          setDataset(d);
+          setReady(true);
+        }
       })
-      .catch((e) => setStorageError(e.message));
+      .catch((e) => {
+        if (live) setStorageError(e.message);
+      });
+    const refresh = async () => {
+      if (!live || editingRef.current || saving.current) return;
+      try {
+        const d = await read();
+        if (
+          live &&
+          !editingRef.current &&
+          !saving.current &&
+          d.revision > datasetRef.current.revision
+        ) {
+          setDataset(d);
+          setChanged(false);
+        }
+        if (live) {
+          setStorageError("");
+          setReady(true);
+        }
+      } catch (e) {
+        if (live)
+          setStorageError(`同步失敗，請重新載入。${(e as Error).message}`);
+      }
+    };
+    const visibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", visibility);
+    const timer = window.setInterval(refresh, 30000);
     const c =
       typeof BroadcastChannel !== "undefined"
         ? new BroadcastChannel("skin-journal")
         : null;
     channel.current = c;
     if (c) c.onmessage = () => setChanged(true);
-    return () => c?.close();
-  }, []);
+    return () => {
+      live = false;
+      c?.close();
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [userId, authReady]);
+  const refreshCloud = async () => {
+    if (saving.current || editingRef.current) return;
+    setReady(false);
+    try {
+      const d = userId ? await loadCloud(userId) : await load();
+      if (activeUser.current === userId) {
+        setDataset(d);
+        setReady(true);
+        setStorageError("");
+        setChanged(false);
+      }
+    } catch (e) {
+      setStorageError((e as Error).message);
+    }
+  };
   useEffect(() => {
     setMenu(false);
     setMobile(false);
@@ -746,7 +891,11 @@ export default function App() {
     saving.current = true;
     try {
       const valid = validateEntries(next);
-      const d = await save(valid, dataset.revision);
+      const d = userId
+        ? await saveCloud(valid, dataset.revision, userId)
+        : await save(valid, dataset.revision);
+      if (activeUser.current !== userId)
+        throw new Error("帳號已切換，請重新載入目前帳號。");
       setDataset(d);
       setChanged(false);
       channel.current?.postMessage(d.revision);
@@ -764,7 +913,11 @@ export default function App() {
   const saveEntry = async (entry: Entry) => {
     await commit([...entries.filter((e) => e.id !== entry.id), entry]);
     setEditor(null);
-    setToast("已儲存於此瀏覽器");
+    setToast(
+      userId
+        ? "紀錄與附件已儲存到私人雲端"
+        : "已儲存於此瀏覽器；登入後可上傳雲端",
+    );
   };
   const remove = async (entry: Entry) => {
     if (
@@ -932,7 +1085,9 @@ export default function App() {
             <ShieldCheck size={21} />
             <h4>為紀錄，留一份備份</h4>
             <p>
-              資料保存在此瀏覽器。
+              {userId
+                ? "資料保存在私人雲端。"
+                : "未登入：資料僅保存在此瀏覽器。"}
               <br />
               定期匯出，讓回憶安心留存。
             </p>
@@ -949,7 +1104,7 @@ export default function App() {
             <Settings2 size={18} />
             資料與設定
           </button>
-          <span className="version">PERSONAL JOURNAL · V0.1</span>
+          <span className="version">PERSONAL JOURNAL · V0.2</span>
         </div>
       </aside>
       {mobile && (
@@ -976,7 +1131,9 @@ export default function App() {
           <div className="topbar-right">
             <span className="local-badge">
               <LockKeyhole size={13} />
-              <span>本機儲存</span>
+              <button onClick={() => setPage("settings")}>
+                {userId ? "已登入 · 雲端同步" : "登入跨裝置同步"}
+              </button>
             </span>
             <div className="avatar" aria-label="個人空間">
               私
@@ -1038,6 +1195,14 @@ export default function App() {
               role={storageError ? "alert" : "status"}
             >
               {storageError || "正在開啟你的肌膚日誌…"}
+              {storageError && (
+                <button
+                  className="text-button"
+                  onClick={() => void refreshCloud()}
+                >
+                  重新載入
+                </button>
+              )}
             </div>
           )}
           {changed && (
@@ -1048,7 +1213,7 @@ export default function App() {
                 disabled={!!editor}
                 onClick={async () => {
                   try {
-                    setDataset(await load());
+                    setDataset(userId ? await loadCloud(userId) : await load());
                     setChanged(false);
                   } catch (e) {
                     setToast((e as Error).message);
@@ -1246,8 +1411,9 @@ export default function App() {
               <div className="privacy-footer">
                 <ShieldCheck size={14} />
                 <span>
-                  你的紀錄留在此瀏覽器，不會上傳至
-                  GitHub。跨裝置可使用備份匯入。
+                  {userId
+                    ? "紀錄與附件僅限登入帳號讀取，不會上傳至 GitHub。"
+                    : "未登入的紀錄僅存在此瀏覽器。登入後可將舊資料加入雲端。"}
                 </span>
                 <button onClick={() => setPage("settings")}>
                   了解資料保存
@@ -1389,7 +1555,7 @@ export default function App() {
                       <div className="card-footer">
                         <span>手動核對 · {e.metrics.length} 個指標</span>
                         <span>
-                          查看摘要
+                          閱讀報告
                           <ArrowRight size={14} />
                         </span>
                       </div>
@@ -1795,87 +1961,108 @@ export default function App() {
             </div>
           )}
           {page === "settings" && (
-            <div className="settings-grid">
-              <section className="panel settings-panel">
-                <div className="entry-icon treatment">
-                  <ShieldCheck size={23} />
-                </div>
-                <h3>資料，由你自己掌握</h3>
-                <p>
-                  第一版使用瀏覽器 IndexedDB 保存紀錄與附件。網站程式部署於公開
-                  GitHub Pages，個人資料只保存在你目前使用的瀏覽器。
-                </p>
-                <dl>
-                  <div>
-                    <dt>目前紀錄</dt>
-                    <dd>{entries.length} 筆</dd>
+            <>
+              <CloudAccount
+                user={user}
+                busy={(!ready && !storageError) || !!editor || importing}
+                onRefresh={() => void refreshCloud()}
+                onMigrate={async () => {
+                  const local = await load();
+                  if (!local.entries.length)
+                    throw new Error("此瀏覽器沒有舊紀錄。");
+                  if (
+                    !window.confirm(
+                      `將此瀏覽器 ${local.entries.length} 筆紀錄與附件加入目前雲端帳號？`,
+                    )
+                  )
+                    throw new Error("已取消上傳");
+                  await commit(mergeEntries(entries, local.entries));
+                }}
+              />
+              <div className="settings-grid">
+                <section className="panel settings-panel">
+                  <div className="entry-icon treatment">
+                    <ShieldCheck size={23} />
                   </div>
-                  <div>
-                    <dt>附件原始大小</dt>
-                    <dd>
-                      {(
-                        entries.reduce(
-                          (n, e) =>
-                            n + e.attachments.reduce((s, a) => s + a.size, 0),
-                          0,
-                        ) /
-                        1024 /
-                        1024
-                      ).toFixed(1)}{" "}
-                      MB
-                    </dd>
+                  <h3>資料，由你自己掌握</h3>
+                  <p>
+                    登入後使用私人雲端保存紀錄與附件，手機、電腦以相同帳號登入即可讀取。未登入時仍以
+                    IndexedDB 保存本機資料。網站程式公開，私人資料不進 GitHub。
+                  </p>
+                  <dl>
+                    <div>
+                      <dt>目前紀錄</dt>
+                      <dd>{entries.length} 筆</dd>
+                    </div>
+                    <div>
+                      <dt>附件原始大小</dt>
+                      <dd>
+                        {(
+                          entries.reduce(
+                            (n, e) =>
+                              n + e.attachments.reduce((s, a) => s + a.size, 0),
+                            0,
+                          ) /
+                          1024 /
+                          1024
+                        ).toFixed(1)}{" "}
+                        MB
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>跨裝置同步</dt>
+                      <dd>{userId ? "已啟用（同帳號）" : "請先登入"}</dd>
+                    </div>
+                    <div>
+                      <dt>AI／報告自動讀取</dt>
+                      <dd>尚未支援</dd>
+                    </div>
+                  </dl>
+                  <div className="notice">
+                    {userId
+                      ? "已儲存的雲端紀錄可在清除瀏覽器資料後重新登入讀取；尚未儲存的編輯不會保留。共用裝置使用後請登出。"
+                      : "本機紀錄可能因清除瀏覽器資料、更換瀏覽器或無痕模式而遺失；請先備份，或登入後明確上傳舊資料。"}
                   </div>
-                  <div>
-                    <dt>自動雲端同步</dt>
-                    <dd>尚未支援</dd>
+                </section>
+                <section className="panel settings-panel">
+                  <div className="entry-icon report">
+                    <ArrowDownToLine size={23} />
                   </div>
-                  <div>
-                    <dt>AI／報告自動讀取</dt>
-                    <dd>尚未支援</dd>
-                  </div>
-                </dl>
-                <div className="notice">
-                  清除瀏覽器資料、更換瀏覽器或使用無痕模式，可能失去紀錄。請定期匯出備份；此裝置的其他使用者也可能存取資料。
-                </div>
-              </section>
-              <section className="panel settings-panel">
-                <div className="entry-icon report">
-                  <ArrowDownToLine size={23} />
-                </div>
-                <h3>備份與跨裝置移轉</h3>
-                <p>
-                  匯出包含所有紀錄與附件的 JSON
-                  檔，再到另一台裝置匯入。檔案未加密，請存放在你信任的位置。
-                </p>
-                <button
-                  className="button primary"
-                  disabled={!ready}
-                  onClick={exportData}
-                >
-                  <ArrowDownToLine size={16} />
-                  匯出完整備份
-                </button>
-                <hr />
-                <h4>匯入已有的備份</h4>
-                <p>
-                  匯入前會驗證內容並顯示筆數。確認後會取代此瀏覽器的全部紀錄，不會自動合併。
-                </p>
-                <button
-                  className="button secondary"
-                  disabled={!ready || importing}
-                  onClick={() => importRef.current?.click()}
-                >
-                  <Upload size={16} />
-                  {importing ? "正在驗證…" : "選擇備份檔"}
-                </button>
-                <hr />
-                <h4>第一版範圍</h4>
-                <p>
-                  已提供療程、照片比較、膚況日誌、原始報告與手動指標摘要、保養紀錄、日程及備份。私人帳號、雲端同步、自動匯入、AI
-                  分析與推播提醒留待後續版本。
-                </p>
-              </section>
-            </div>
+                  <h3>備份與跨裝置移轉</h3>
+                  <p>
+                    可將目前本機或登入帳號的紀錄與附件匯出為完整 JSON
+                    備份。檔案未加密，請存放在你信任的位置。登入後跨裝置不需手動移轉。
+                  </p>
+                  <button
+                    className="button primary"
+                    disabled={!ready}
+                    onClick={exportData}
+                  >
+                    <ArrowDownToLine size={16} />
+                    匯出完整備份
+                  </button>
+                  <hr />
+                  <h4>匯入已有的備份</h4>
+                  <p>
+                    匯入前會驗證內容並顯示筆數。確認後會取代目前資料區（登入時為雲端帳號，未登入時為本機）的全部紀錄，不會自動合併。
+                  </p>
+                  <button
+                    className="button secondary"
+                    disabled={!ready || importing}
+                    onClick={() => importRef.current?.click()}
+                  >
+                    <Upload size={16} />
+                    {importing ? "正在驗證…" : "選擇備份檔"}
+                  </button>
+                  <hr />
+                  <h4>目前版本範圍</h4>
+                  <p>
+                    已提供療程、照片比較、膚況日誌、原始報告與手動指標摘要、保養紀錄、日程及備份。私人帳號、雲端同步、自動匯入、AI
+                    分析與推播提醒留待後續版本。
+                  </p>
+                </section>
+              </div>
+            </>
           )}
           <footer className="site-footer">
             <span>肌序 Skin Journal</span>
@@ -1896,9 +2083,13 @@ export default function App() {
           e.target.value = "";
         }}
       />
+      {preview && (
+        <PreviewDialog attachment={preview} onClose={() => setPreview(null)} />
+      )}
       {editor && (
         <Editor
           key={editor.id}
+          cloudMode={!!userId}
           initial={editor}
           entries={entries}
           onClose={() => setEditor(null)}
@@ -1982,12 +2173,22 @@ export default function App() {
             )}
             {!!detail.attachments.length && (
               <div className="detail-attachments">
-                <h4>原始附件</h4>
+                <h4>原始附件（點選預覽）</h4>
                 {detail.attachments.map((a) => (
                   <div key={a.id} className="detail-attachment">
-                    {a.type.startsWith("image/") && (
-                      <img src={a.data} alt={a.name} />
-                    )}
+                    <button
+                      className="attachment-preview-button"
+                      onClick={() => setPreview(a)}
+                    >
+                      {a.type.startsWith("image/") ? (
+                        <img src={a.data} alt={a.name} />
+                      ) : (
+                        <>
+                          <FileText size={20} />
+                          線上預覽整份 PDF：{a.name}
+                        </>
+                      )}
+                    </button>
                     <button
                       className="text-button"
                       onClick={() => {
@@ -2070,7 +2271,7 @@ export default function App() {
           <div className="detail-content">
             <div className="notice">
               這會取代目前全部 {entries.length}{" "}
-              筆紀錄，且無法復原。建議先匯出目前資料。
+              筆紀錄（登入時為雲端帳號資料），且無法復原。建議先匯出目前資料。
             </div>
             <h3>備份中有 {pendingImport.length} 筆紀錄</h3>
             <dl className="import-counts">
@@ -2102,7 +2303,9 @@ export default function App() {
                 try {
                   await commit(pendingImport);
                   setPendingImport(null);
-                  setToast("備份已匯入此瀏覽器");
+                  setToast(
+                    userId ? "備份已匯入雲端帳號" : "備份已匯入此瀏覽器",
+                  );
                 } catch (e) {
                   setToast((e as Error).message);
                 } finally {

@@ -7,3 +7,6 @@ dist/
 !.env.example
 coverage/
 .vite/
+
+/public/pdfjs/
+/supabase/.temp/
