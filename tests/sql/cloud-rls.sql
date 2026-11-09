@@ -14,9 +14,10 @@ set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","r
 do $$ begin if (select count(*) from public.journal_states) <> 0 then raise exception 'cross-user data exposed'; end if; end $$;
 reset role;
 do $$ begin
+  if has_table_privilege('authenticated','public.journal_states','truncate') or has_table_privilege('authenticated','public.journal_states','delete') or has_table_privilege('authenticated','public.journal_states','trigger') then raise exception 'excess authenticated grants'; end if;
   if has_table_privilege('anon','public.journal_states','select') then raise exception 'anonymous access exposed'; end if;
   if has_function_privilege('anon','public.save_journal(bigint,jsonb)','execute') then raise exception 'anonymous save exposed'; end if;
   if (select public from storage.buckets where id='journal-files') then raise exception 'files publicly exposed'; end if;
 end $$;
 rollback;
-select 'owner read, cross-user isolation, revision conflict, ownership reassignment, anonymous denial, private bucket: passed; fixtures rolled back' as verification;
+select 'owner read, cross-user isolation, revision conflict, ownership reassignment, anonymous denial, least privilege grants, private bucket: passed; fixtures rolled back' as verification;

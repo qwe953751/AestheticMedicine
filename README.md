@@ -49,7 +49,7 @@ npm run preview
 
 推送來源 `main` 後，GitHub Actions 跑測試與 build，再以既有專用 deploy key，透過 `scripts/publish-pages.sh` 將 `dist/` 發佈到 `frank-AestheticMedicine/frank-aestheticmedicine.github.io` 的 `gh-pages`。舊來源站與 AestheticMedicine-view 都保持完全空白，沒有 iframe、轉址或備份移轉入口。
 
-`supabase/migrations/` 保存已套用的三份 schema／policy／RPC migration，不可修改已套用歷史。資料庫隔離驗證見 `tests/sql/cloud-rls.sql`，使用合成使用者並 rollback；`scripts/verify-cloud-live.mjs` 只供專用合成帳號的實際連線驗證，憑證須透過隱藏 stdin 提供，不能寫入檔案或 CI log。
+`supabase/migrations/` 保存已套用的四份 schema／policy／RPC migration，不可修改已套用歷史。資料庫隔離驗證見 `tests/sql/cloud-rls.sql`，使用合成使用者並 rollback；`scripts/verify-cloud-live.mjs` 只供專用合成帳號的實際連線驗證，憑證須透過隱藏 stdin 提供，不能寫入檔案或 CI log。
 
 ## 文件
 
