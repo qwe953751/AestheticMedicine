@@ -65,6 +65,7 @@ const AttachmentPreview = lazy(() => import("./AttachmentPreview"));
 import CloudAccount, { useAccount } from "./CloudAccount";
 import { loadCloud, saveCloud } from "./cloud";
 import { mergeEntries } from "./merge";
+import ReportReader from "./ReportReader";
 
 type Page =
   | "overview"
@@ -608,6 +609,7 @@ function Editor({
                   onInput={async (e) => {
                     const files = Array.from(e.currentTarget.files || []);
                     e.currentTarget.value = "";
+                    if (!files.length) return;
                     setError("");
                     setReading(true);
                     try {
@@ -1555,7 +1557,9 @@ export default function App() {
                       <div className="card-footer">
                         <span>手動核對 · {e.metrics.length} 個指標</span>
                         <span>
-                          閱讀報告
+                          {e.attachments.length
+                            ? "閱讀原始報告"
+                            : "補上原始報告"}
                           <ArrowRight size={14} />
                         </span>
                       </div>
@@ -2172,7 +2176,33 @@ export default function App() {
                 <p>{detail.notes}</p>
               </div>
             )}
-            {!!detail.attachments.length && (
+            {detail.kind === "report" && (
+              <ReportReader
+                key={detail.id}
+                entry={detail}
+                onEnlarge={setPreview}
+                onAttach={async (attachments) => {
+                  const current = entries.find((e) => e.id === detail.id);
+                  if (!current)
+                    throw new Error("這筆報告已不存在，請重新載入。");
+                  const next = {
+                    ...current,
+                    attachments: [...current.attachments, ...attachments],
+                    updatedAt: new Date().toISOString(),
+                  };
+                  await commit(
+                    entries.map((e) => (e.id === next.id ? next : e)),
+                  );
+                  setDetail(next);
+                  setToast(
+                    userId
+                      ? "原始報告已儲存至雲端並開啟"
+                      : "原始報告已儲存並開啟",
+                  );
+                }}
+              />
+            )}
+            {detail.kind !== "report" && !!detail.attachments.length && (
               <div className="detail-attachments">
                 <h4>原始附件（點選預覽）</h4>
                 {detail.attachments.map((a) => (
@@ -2215,27 +2245,29 @@ export default function App() {
                 ))}
               </div>
             )}
-            {detail.kind === "report" && (
-              <div className="report-summary">
-                <div className="section-heading">
-                  <h3>整理摘要</h3>
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      download(
-                        reportSummary(detail, entries),
-                        `${detail.title.replace(/[\\/:*?"<>|]/g, "_")}-摘要.txt`,
-                        "text/plain;charset=utf-8",
-                      )
-                    }
-                  >
-                    <ArrowDownToLine size={15} />
-                    下載摘要
-                  </button>
-                </div>
-                <pre>{reportSummary(detail, entries)}</pre>
-              </div>
-            )}
+            {detail.kind === "report" &&
+              (detail.metrics.length > 0 || detail.notes.trim()) && (
+                <details className="report-summary">
+                  <summary>手動指標與備註摘要（非報告原文）</summary>
+                  <div className="section-heading">
+                    <h3>整理摘要</h3>
+                    <button
+                      className="text-button"
+                      onClick={() =>
+                        download(
+                          reportSummary(detail, entries),
+                          `${detail.title.replace(/[\\/:*?"<>|]/g, "_")}-摘要.txt`,
+                          "text/plain;charset=utf-8",
+                        )
+                      }
+                    >
+                      <ArrowDownToLine size={15} />
+                      下載摘要
+                    </button>
+                  </div>
+                  <pre>{reportSummary(detail, entries)}</pre>
+                </details>
+              )}
           </div>
           <div className="modal-footer">
             <button
